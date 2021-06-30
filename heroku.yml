@@ -1,0 +1,5 @@
+build:
+  docker: 
+    web: Dockerfile.heroku
+run:
+  web: sed -i "s/80/$PORT/g" /etc/nginx/imagesweserv.conf && sed -i "s/images.weserv.nl/$HOSTNAME/g" /etc/nginx/imagesweserv.conf && nginx -g 'daemon off;' 
