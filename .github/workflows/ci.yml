@@ -17,11 +17,11 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # TODO(kleisauke): Enable once {tiff,magick}save_target is supported in libvips master
+          # TODO(kleisauke): Enable once tiffsave_target/magickload_source is supported
           # - os: ubuntu-20.04
           #   libvips-version: master
           - os: ubuntu-20.04
-            libvips-version: 8.11.0
+            libvips-version: 8.11.4
             coverage: true
     steps:
       - uses: actions/checkout@v2

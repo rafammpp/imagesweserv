@@ -85,6 +85,16 @@ Sets the maximum number of redirection-followings allowed.
 Enables or disables image savers to be used within the `&output=` query parameter.
 This directive accepts multiple parameters.
 
+### `weserv_process_timeout`
+
+| syntax:      | `weserv_process_timeout <time>`                               |
+| :----------- | :------------------------------------------------------------ |
+| **default:** | `10s`                                                         |
+| **context:** | `http`, `server`, `location`                                  |
+
+Specifies a maximum allowed time for image processing. Set to `0` to remove
+this limit.
+
 ### `weserv_max_pages`
 
 | syntax:      | `weserv_max_pages <pages>`                     |
@@ -178,15 +188,25 @@ Acceptable values are in the range from 1 to 100.
 If the directive is not present, then the quality specified in `weserv_quality`
 is used.
 
-### `weserv_avif_speed`
+### `weserv_avif_effort`
 
-| syntax:      | `weserv_avif_speed <speed>`                    |
+| syntax:      | `weserv_avif_effort <effort>`                  |
 | :----------- | :----------------------------------------------|
-| **default:** | `5`                                            |
+| **default:** | `4`                                            |
 | **context:** | `http`, `server`, `location`, `if in location` |
 
 Controls the CPU effort spent on improving AVIF compression. Acceptable
-values are in the range from 0 (slowest/smallest) to 9 (fastest/largest).
+values are in the range from 0 (fastest/largest) to 9 (slowest/smallest).
+
+### `weserv_gif_effort`
+
+| syntax:      | `weserv_gif_effort <effort>`                   |
+| :----------- | :----------------------------------------------|
+| **default:** | `7`                                            |
+| **context:** | `http`, `server`, `location`, `if in location` |
+
+Controls the CPU effort spent on improving GIF compression. Acceptable
+values are in the range from 1 (fastest/largest) to 10 (slowest/smallest).
 
 ### `weserv_zlib_level`
 

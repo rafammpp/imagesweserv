@@ -7,6 +7,8 @@
 #include "stream.h"
 #include "util.h"
 
+#include <weserv/enums.h>
+
 using ::weserv::api::enums::Output;
 using ::weserv::api::utils::Status;
 
@@ -63,8 +65,12 @@ ngx_conf_num_bounds_t ngx_weserv_quality_bounds = {
     ngx_conf_check_num_bounds, 1, 100
 };
 
-ngx_conf_num_bounds_t ngx_weserv_avif_speed_bounds = {
+ngx_conf_num_bounds_t ngx_weserv_avif_effort_bounds = {
     ngx_conf_check_num_bounds, 0, 9
+};
+
+ngx_conf_num_bounds_t ngx_weserv_gif_effort_bounds = {
+    ngx_conf_check_num_bounds, 1, 10
 };
 
 ngx_conf_num_bounds_t ngx_weserv_zlib_level_bounds = {
@@ -140,6 +146,14 @@ ngx_command_t ngx_weserv_commands[] = {
      offsetof(ngx_weserv_loc_conf_t, api_conf.savers),
      &ngx_weserv_savers},
 
+    {ngx_string("weserv_process_timeout"),
+     NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
+         NGX_CONF_TAKE1,
+     ngx_conf_set_sec_slot,
+     NGX_HTTP_LOC_CONF_OFFSET,
+     offsetof(ngx_weserv_loc_conf_t, api_conf.process_timeout),
+     nullptr},
+
     {ngx_string("weserv_max_pages"),
      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
          NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
@@ -204,13 +218,21 @@ ngx_command_t ngx_weserv_commands[] = {
      offsetof(ngx_weserv_loc_conf_t, api_conf.webp_quality),
      &ngx_weserv_quality_bounds},
 
-    {ngx_string("weserv_avif_speed"),
+    {ngx_string("weserv_avif_effort"),
      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
          NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
      ngx_conf_set_num_slot,
      NGX_HTTP_LOC_CONF_OFFSET,
-     offsetof(ngx_weserv_loc_conf_t, api_conf.avif_speed),
-     &ngx_weserv_avif_speed_bounds},
+     offsetof(ngx_weserv_loc_conf_t, api_conf.avif_effort),
+     &ngx_weserv_avif_effort_bounds},
+
+    {ngx_string("weserv_gif_effort"),
+     NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
+         NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
+     ngx_conf_set_num_slot,
+     NGX_HTTP_LOC_CONF_OFFSET,
+     offsetof(ngx_weserv_loc_conf_t, api_conf.gif_effort),
+     &ngx_weserv_gif_effort_bounds},
 
     {ngx_string("weserv_zlib_level"),
      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF |
@@ -362,6 +384,7 @@ void *ngx_weserv_create_loc_conf(ngx_conf_t *cf) {
 
     // API configuration
     lc->api_conf.savers = 0;
+    lc->api_conf.process_timeout = NGX_CONF_UNSET;
     lc->api_conf.limit_input_pixels = NGX_CONF_UNSET_UINT;
     lc->api_conf.limit_output_pixels = NGX_CONF_UNSET_UINT;
     lc->api_conf.max_pages = NGX_CONF_UNSET;
@@ -370,7 +393,8 @@ void *ngx_weserv_create_loc_conf(ngx_conf_t *cf) {
     lc->api_conf.jpeg_quality = NGX_CONF_UNSET;
     lc->api_conf.tiff_quality = NGX_CONF_UNSET;
     lc->api_conf.webp_quality = NGX_CONF_UNSET;
-    lc->api_conf.avif_speed = NGX_CONF_UNSET;
+    lc->api_conf.avif_effort = NGX_CONF_UNSET;
+    lc->api_conf.gif_effort = NGX_CONF_UNSET;
     lc->api_conf.zlib_level = NGX_CONF_UNSET;
     lc->api_conf.fail_on_error = NGX_CONF_UNSET;
 
@@ -410,6 +434,10 @@ char *ngx_weserv_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
         conf->api_conf.savers, prev->api_conf.savers,
         (NGX_CONF_BITMASK_SET | static_cast<ngx_uint_t>(Output::All)));
 
+    // Abort image processing after 10 seconds by default
+    ngx_conf_merge_value(conf->api_conf.process_timeout,
+                         prev->api_conf.process_timeout, 10);
+
     // Process at the maximum 256 pages, which should be plenty
     ngx_conf_merge_value(conf->api_conf.max_pages, prev->api_conf.max_pages,
                          256);
@@ -435,8 +463,10 @@ char *ngx_weserv_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
 
     // A default compromise between speed and compression effectiveness
     // (corresponds to the default values in libvips)
-    ngx_conf_merge_value(conf->api_conf.avif_speed, prev->api_conf.avif_speed,
-                         5);
+    ngx_conf_merge_value(conf->api_conf.avif_effort, prev->api_conf.avif_effort,
+                         4);
+    ngx_conf_merge_value(conf->api_conf.gif_effort, prev->api_conf.gif_effort,
+                         7);
     ngx_conf_merge_value(conf->api_conf.zlib_level, prev->api_conf.zlib_level,
                          6);
 
@@ -652,8 +682,10 @@ ngx_int_t ngx_weserv_image_body_filter(ngx_http_request_t *r, ngx_chain_t *in) {
     bool debug_output = false;
 #endif
 
+    ngx_weserv_upstream_ctx_t *upstream_ctx = nullptr;
+
     if (lc->mode == NGX_WESERV_PROXY_MODE) {
-        auto *upstream_ctx = reinterpret_cast<ngx_weserv_upstream_ctx_t *>(ctx);
+        upstream_ctx = reinterpret_cast<ngx_weserv_upstream_ctx_t *>(ctx);
 
 #if NGX_DEBUG
         if (upstream_ctx->debug == 1) {
@@ -704,8 +736,9 @@ ngx_int_t ngx_weserv_image_body_filter(ngx_http_request_t *r, ngx_chain_t *in) {
     ngx_chain_t *out = nullptr;
     Status status = mc->weserv->process(
         ngx_str_to_std(r->args),
-        std::unique_ptr<api::io::SourceInterface>(new NgxSource(r, ctx->in)),
-        std::unique_ptr<api::io::TargetInterface>(new NgxTarget(r, &out)),
+        std::unique_ptr<api::io::SourceInterface>(new NgxSource(ctx->in)),
+        std::unique_ptr<api::io::TargetInterface>(
+            new NgxTarget(upstream_ctx, r, &out)),
         lc->api_conf);
 
     r->connection->buffered &= ~NGX_WESERV_IMAGE_BUFFERED;

@@ -1,5 +1,36 @@
 #include "api_manager_impl.h"
 
+#include "exceptions/invalid.h"
+#include "exceptions/large.h"
+#include "exceptions/unreadable.h"
+#include "exceptions/unsupported.h"
+
+#include "parsers/query.h"
+
+#include "processors/alignment.h"
+#include "processors/background.h"
+#include "processors/blur.h"
+#include "processors/brightness.h"
+#include "processors/contrast.h"
+#include "processors/crop.h"
+#include "processors/embed.h"
+#include "processors/filter.h"
+#include "processors/gamma.h"
+#include "processors/mask.h"
+#include "processors/modulate.h"
+#include "processors/orientation.h"
+#include "processors/rotation.h"
+#include "processors/sharpen.h"
+#include "processors/stream.h"
+#include "processors/thumbnail.h"
+#include "processors/tint.h"
+#include "processors/trim.h"
+
+#include <exception>
+#include <utility>
+
+#include <vips/vips8>
+
 namespace weserv {
 namespace api {
 
@@ -91,16 +122,21 @@ Status ApiManagerImpl::exception_handler(const std::string &query) {
     } catch (const exceptions::UnsupportedSaverException &e) {
         return Status(Status::Code::UnsupportedSaver, e.what(),
                       Status::ErrorCause::Application);
-    } catch (const VError &e) {  // LCOV_EXCL_START
+    } catch (const VError &e) {
         std::string error_str = e.what();
 
         // Log libvips errors
         env_->log_error("libvips error: " + error_str + "\nQuery: " + query);
 
+        // Get the first error message, when we are in our own log domain
+        if (error_str.rfind("weserv: ", 0) == 0) {
+            error_str = error_str.substr(8, error_str.find('\n') - 8);
+        }
+
         return Status(Status::Code::LibvipsError,
                       "libvips error: " + utils::escape_string(error_str),
                       Status::ErrorCause::Application);
-    } catch (const std::exception &e) {
+    } catch (const std::exception &e) {  // LCOV_EXCL_START
         auto error_str = "unknown error: " + std::string(e.what());
 
         // Log unknown errors
@@ -129,11 +165,11 @@ utils::Status ApiManagerImpl::process(const std::string &query,
     // Image processors
     auto trim = processors::Trim(query_holder);
     auto thumbnail = processors::Thumbnail(query_holder, config);
-    auto orientation = processors::Orientation(query_holder);
-    auto alignment = processors::Alignment(query_holder);
+    auto orientation = processors::Orientation(query_holder, config);
+    auto alignment = processors::Alignment(query_holder, config);
     auto crop = processors::Crop(query_holder);
     auto embed = processors::Embed(query_holder);
-    auto rotation = processors::Rotation(query_holder);
+    auto rotation = processors::Rotation(query_holder, config);
     auto brightness = processors::Brightness(query_holder);
     auto modulate = processors::Modulate(query_holder);
     auto contrast = processors::Contrast(query_holder);
@@ -204,7 +240,7 @@ utils::Status ApiManagerImpl::process_file(const std::string &query,
                                            std::string *out_buf,
                                            const Config &config) {
     try {
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
         auto target = Target::new_to_memory();
 #else
         auto target = Target::new_to_memory(out_buf);
@@ -212,7 +248,7 @@ utils::Status ApiManagerImpl::process_file(const std::string &query,
         Status status =
             process(query, Source::new_from_file(in_file), target, config);
 
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
         if (status.ok() && out_buf != nullptr) {
             size_t length;
             const void *out = vips_blob_get(target.get_target()->blob, &length);
@@ -231,7 +267,7 @@ utils::Status ApiManagerImpl::process_buffer(const std::string &query,
                                              std::string *out_buf,
                                              const Config &config) {
     try {
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
         auto target = Target::new_to_memory();
 #else
         auto target = Target::new_to_memory(out_buf);
@@ -239,7 +275,7 @@ utils::Status ApiManagerImpl::process_buffer(const std::string &query,
         Status status =
             process(query, Source::new_from_buffer(in_buf), target, config);
 
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
         if (status.ok() && out_buf != nullptr) {
             size_t length;
             const void *out = vips_blob_get(target.get_target()->blob, &length);

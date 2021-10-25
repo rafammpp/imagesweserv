@@ -1,10 +1,12 @@
 #!/usr/bin/env perl
 
 use Test::Nginx::Socket;
+use Test::Nginx::Util qw($ServerPort $ServerAddr);
 
 plan tests => repeat_each() * (blocks() * 5);
 
 $ENV{TEST_NGINX_HTML_DIR} ||= html_dir();
+$ENV{TEST_NGINX_URI} = "http://$ServerAddr:$ServerPort";
 
 our $HttpConfig = qq{
     error_log logs/error.log debug;
@@ -48,12 +50,12 @@ __DATA__
         alias $TEST_NGINX_HTML_DIR;
     }
 --- request
-    GET /images/test.gif?maxage=31d
+    GET /images/test.gif?maxage=1w
 --- user_files eval
 ">>> test.gif
 $::TestGif"
 --- response_headers
-Cache-Control: public, max-age=2678400
+Cache-Control: public, max-age=604800
 --- response_body_filters eval
 \&::gif_size
 --- response_body: 1 1
@@ -62,7 +64,7 @@ Cache-Control: public, max-age=2678400
 [warn]
 
 
-=== TEST 2: max age cannot be lower than 31 days
+=== TEST 2: max age cannot be lower than 1 day
 --- http_config eval: $::HttpConfig
 --- config
     location /images {
@@ -70,7 +72,7 @@ Cache-Control: public, max-age=2678400
         alias $TEST_NGINX_HTML_DIR;
     }
 --- request
-    GET /images/test.gif?maxage=30d
+    GET /images/test.gif?maxage=1h
 --- user_files eval
 ">>> test.gif
 $::TestGif"
@@ -84,7 +86,29 @@ Cache-Control: public, max-age=31536000
 [warn]
 
 
-=== TEST 3: filename can be set
+=== TEST 3: max age cannot be higher than 1 year
+--- http_config eval: $::HttpConfig
+--- config
+    location /images {
+        weserv filter;
+        alias $TEST_NGINX_HTML_DIR;
+    }
+--- request
+    GET /images/test.gif?maxage=2y
+--- user_files eval
+">>> test.gif
+$::TestGif"
+--- response_headers
+Cache-Control: public, max-age=31536000
+--- response_body_filters eval
+\&::gif_size
+--- response_body: 1 1
+--- no_error_log
+[error]
+[warn]
+
+
+=== TEST 4: filename can be set
 --- http_config eval: $::HttpConfig
 --- config
     location /images {
@@ -106,7 +130,7 @@ Content-Disposition: inline; filename=test.gif
 [warn]
 
 
-=== TEST 4: filename may contain only alphanumeric characters
+=== TEST 5: filename may contain only alphanumeric characters
 --- http_config eval: $::HttpConfig
 --- config
     location /images {
@@ -128,7 +152,7 @@ Content-Disposition: inline; filename=image.gif
 [warn]
 
 
-=== TEST 5: default image
+=== TEST 6: default image
 --- http_config eval: $::HttpConfig
 --- config
     location /images {
@@ -144,7 +168,7 @@ Location: https://example.org/
 [error]
 [warn]
 
-=== TEST 6: unsupported saver
+=== TEST 7: unsupported saver
 --- http_config eval: $::HttpConfig
 --- config
     location /images {
@@ -161,6 +185,30 @@ $::TestGif"
 Content-Type: application/json
 --- response_body_like: ^.*"code":400,"message":"Saving to json is disabled. Supported savers: jpg".*$
 --- error_code: 400
+--- no_error_log
+[error]
+[warn]
+
+=== TEST 8: rel="canonical" HTTP Header is set
+--- http_config eval: $::HttpConfig
+--- config
+    location /static {
+        alias $TEST_NGINX_HTML_DIR;
+    }
+
+    location /images {
+        weserv proxy;
+    }
+--- request eval
+"GET /images?url=$ENV{TEST_NGINX_URI}/static/test.gif"
+--- user_files eval
+">>> test.gif
+$::TestGif"
+--- response_headers eval
+"Link: <$ENV{TEST_NGINX_URI}/static/test.gif>; rel=\"canonical\""
+--- response_body_filters eval
+\&::gif_size
+--- response_body: 1 1
 --- no_error_log
 [error]
 [warn]

@@ -19,9 +19,6 @@ int64_t NgxSource::read(void *data, size_t length) {
         ngx_buf_t *b = in_->buf;
         size_t size = ngx_min((size_t)(b->last - b->pos), length);
 
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r_->connection->log, 0,
-                       "weserv image buf: %uz", size);
-
         data = ngx_cpymem(data, b->pos, size);
         b->pos += size;
         bytes_read += size;
@@ -80,10 +77,15 @@ void NgxTarget::finish() {
 
     r_->headers_out.content_length = nullptr;
 
-    // Set the content disposition header to images only
+    // Only set the Content-Disposition header on images
     if (!is_base64_needed(r_) &&
         !ngx_string_equal(mime_type, application_json)) {
         (void)set_content_disposition_header(r_, extension_);
+    }
+
+    // Only set the Link header if there's an upstream context available
+    if (upstream_ctx_ != nullptr) {
+        (void)set_link_header(r_, upstream_ctx_->request->url());
     }
 
     time_t max_age = MAX_AGE_DEFAULT;

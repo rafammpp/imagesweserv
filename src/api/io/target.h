@@ -1,22 +1,19 @@
 #pragma once
 
-#include <weserv/io/target_interface.h>
+#include "../utils/utility.h"
 
+#include <cstdio>  // for fclose, fopen, fwrite
 #include <memory>
 #include <string>
-#include <vips/vips8>
+#include <utility>  // for move
 
-#include "utils/utility.h"
-
-#if !VIPS_VERSION_AT_LEAST(8, 12, 0)
-#include <utility>
-#endif
+#include <weserv/io/target_interface.h>
 
 namespace weserv {
 namespace api {
 namespace io {
 
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
 struct WeservTargetClass {
     VipsTargetClass parent_class;
 };
@@ -113,7 +110,7 @@ class Target {
      */
     static Target new_to_file(const std::string &filename);
 
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
     /**
      * Create a target which will output to a memory area.
      * @return A new Target class.
@@ -134,7 +131,7 @@ class Target {
 
     void finish() const;
 
-#if !VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifndef WESERV_ENABLE_TRUE_STREAMING
  private:
     std::unique_ptr<io::TargetInterface> target_;
 #endif

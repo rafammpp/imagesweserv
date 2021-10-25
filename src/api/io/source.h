@@ -1,24 +1,18 @@
 #pragma once
 
-#include <weserv/io/source_interface.h>
+#include "../utils/utility.h"
 
 #include <memory>
 #include <string>
-#include <vips/vips8>
+#include <utility>  // for move
 
-#include "utils/utility.h"
-
-#if !VIPS_VERSION_AT_LEAST(8, 12, 0)
-#include "exceptions/unreadable.h"
-#include <fstream>
-#include <utility>
-#endif
+#include <weserv/io/source_interface.h>
 
 namespace weserv {
 namespace api {
 namespace io {
 
-#if VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifdef WESERV_ENABLE_TRUE_STREAMING
 struct WeservSourceClass {
     VipsSourceClass parent_class;
 };
@@ -81,7 +75,7 @@ class Source {
      */
     static Source new_from_buffer(const std::string &buffer);
 
-#if !VIPS_VERSION_AT_LEAST(8, 12, 0)
+#ifndef WESERV_ENABLE_TRUE_STREAMING
     /**
      * @return the buffer held by this source.
      */

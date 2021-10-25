@@ -1,8 +1,6 @@
 #pragma once
 
-#include "processors/base.h"
-
-#include <algorithm>
+#include "base.h"
 
 namespace weserv {
 namespace api {
@@ -10,9 +8,16 @@ namespace processors {
 
 class Alignment : ImageProcessor {
  public:
-    using ImageProcessor::ImageProcessor;
+    Alignment(std::shared_ptr<parsers::Query> query, const Config &config)
+        : ImageProcessor(std::move(query)), config_(config) {}
 
     VImage process(const VImage &image) const override;
+
+ private:
+    /**
+     * Global config.
+     */
+    const Config &config_;
 };
 
 }  // namespace processors
