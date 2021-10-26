@@ -1,10 +1,11 @@
 # For heroku
 We use [heroku.yml](https://devcenter.heroku.com/articles/build-docker-images-heroku-yml) deployment method. Providing your remote repository name is heroku and your branch heroku, all you have to do is: 
-`git push heroku heroku:main`
+Only the first time: `heroku stack:set container -a app-name` 
+Every time you want to deploy some changes: `git push heroku heroku:main`
 
 This will use the heroku.yml to build the docker on your dyno.
 
-The Docker file used is Dockerfile.heroku, at the root of repository. The important part is the CMD line at the end of the file. It replaces the port and hostname with the corresponding env vars.
+The Docker file used is Dockerfile.heroku, at the root of the repository. The important part is the CMD line at the end of the file. It replaces the port and hostname with the corresponding env vars.
 
 # Images.weserv.nl
 
